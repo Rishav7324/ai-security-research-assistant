@@ -18,7 +18,11 @@ SKILL_NAME="ai-security-research-assistant"
 REPO_URL="https://github.com/Rishav7324/ai-security-research-assistant.git"
 
 TARGET_DIR="${HOME}/.config/opencode/skills/${SKILL_NAME}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+if [ -n "${BASH_SOURCE:-}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  SCRIPT_DIR="$(pwd)"
+fi
 
 echo "==> Installing OpenCode skill: ${SKILL_NAME}"
 mkdir -p "${HOME}/.config/opencode/skills"
