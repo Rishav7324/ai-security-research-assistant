@@ -23,6 +23,13 @@ SCRIPT_DIR="$(pwd)"
 echo "==> Installing OpenCode skill: ${SKILL_NAME}"
 mkdir -p "${HOME}/.config/opencode/skills"
 
+# Clean up the old pre-upgrade skill name, if present, so there's no stale duplicate.
+OLD_TARGET="${HOME}/.config/opencode/skills/ai-security-research-assistant"
+if [ -d "${OLD_TARGET}" ]; then
+  echo "==> Removing old skill folder (renamed to ${SKILL_NAME})..."
+  rm -rf "${OLD_TARGET}"
+fi
+
 # Remove any previous install so this is safe to re-run (idempotent).
 if [ -d "${TARGET_DIR}" ]; then
   echo "==> Existing install found, replacing it..."
