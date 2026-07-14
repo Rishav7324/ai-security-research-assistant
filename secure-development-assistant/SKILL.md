@@ -4,7 +4,7 @@ description: Use WHILE building a website/app/API/SaaS — not after the fact. G
 license: internal-use
 compatibility: opencode
 metadata:
-  version: "2.0.0"
+  version: "3.0.0"
   maintainer: Prontly
   status: production
   scope: preventive-secure-development
@@ -197,13 +197,70 @@ entitlement-check code patterns.
 
 ---
 
-## 7. Multi-Agent Architecture
+## 6a. File Upload Security
+
+**Golden rules**
+- Validate file type by **content** (magic bytes / MIME sniffing), never just the extension or client-sent `Content-Type` header — both are attacker-controlled.
+- Enforce a max file size server-side before/while reading the stream, not after it's fully buffered in memory.
+- Generate a new random filename server-side (e.g. UUID) — never trust or reuse the client-supplied filename (prevents path traversal via `../../` and overwrite attacks).
+- Store uploads outside the web root, or in object storage (S3/R2/Cloudflare) with **no execute permission** and no direct public write access — serve via signed URLs with short expiry rather than a public bucket when the content is user-specific.
+- Never let an uploaded file be served with a content-type that lets a browser execute it as HTML/JS (set `Content-Disposition: attachment` and a locked-down `Content-Type` for user uploads that don't need inline rendering).
+- If images are processed (resize/thumbnail), use a well-maintained library and keep it updated — image parsers are a common source of memory-corruption CVEs.
+
+## 6b. Secrets & Environment Management
+
+**Golden rules**
+- Secrets (API keys, DB credentials, JWT signing keys, payment provider secret keys) live only in backend environment variables / your platform's secret manager (Vercel Environment Variables, Cloudflare Workers secrets, GitHub Actions secrets) — never in frontend code, client bundles, or committed files.
+- Commit a `.env.example` with variable **names** only, never real values. Add `.env`, `.env.local` etc. to `.gitignore` from day one.
+- Different secrets per environment (dev/staging/prod) — a leaked dev key should never grant prod access.
+- Rotate a secret immediately if it's ever pasted in chat, a support ticket, a public repo, or a screen-share — treat exposure as compromise regardless of whether misuse is confirmed.
+- Principle of least privilege: scope API keys/tokens as narrowly as possible (e.g. a fine-grained, read-only, single-repo GitHub token instead of a classic all-access token).
+
+## 6c. Rate Limiting & Abuse Prevention
+
+**Golden rules**
+- Rate-limit at the API boundary for: login, signup, password reset, OTP/email verification, payment/checkout initiation, and any endpoint that sends email/SMS (prevents both brute force and cost-based abuse of third-party sending APIs).
+- Key limits by account **and** by IP/device fingerprint — either alone can be bypassed.
+- Prefer a sliding-window or token-bucket limiter (Redis-backed) over naive in-memory counters, which reset on every server restart/scale-out.
+- For public-facing forms (signup, contact, waitlist), add a low-friction bot defense (hidden honeypot field, or a challenge like Cloudflare Turnstile) before falling back to heavier CAPTCHAs.
+- On repeated failed logins for one account, prefer a short exponential backoff / temporary lock over an unlimited-attempts field — but never lock out permanently without a recovery path (that itself becomes a denial-of-service vector against a specific victim).
+
+## 6d. Multi-Tenant Data Isolation
+
+Applies to any SaaS where multiple customers/users share the same database/tables
+(most of your Prontly-style products).
+
+**Golden rules**
+- Every query that reads or writes tenant-scoped data includes the tenant/user ID **in the query itself** (e.g. `WHERE user_id = ? AND id = ?`), never just `WHERE id = ?` relying on the app layer to have "already checked" — this is the root cause of most IDOR/BOLA bugs.
+- Prefer database-level enforcement where available (e.g. Postgres Row-Level Security, Firestore Security Rules keyed on `request.auth.uid`) as a second layer beneath your application-level checks — defense in depth, not either/or.
+- Never let a client supply the tenant/user ID for a write operation; derive it server-side from the authenticated session, always.
+- Shared resources (uploaded files, generated reports, exported data) get access-checked the same way — a predictable or sequential file/report URL is effectively public unless each request re-verifies ownership.
+
+## 6e. Mobile / Android App Security
+
+Relevant when building native apps (e.g. Kotlin/Android projects like Rivaani or a
+custom IME keyboard) rather than just web backends.
+
+**Golden rules**
+- Never hardcode API keys/secrets in app source — a compiled APK/AAB can be decompiled and any embedded string extracted trivially. Privileged secrets (e.g. an AI provider key with billing) belong on a backend the app calls, not in the client.
+- Store sensitive local data (tokens, cached credentials) in `EncryptedSharedPreferences` or the Android Keystore, never plain `SharedPreferences` or unencrypted files.
+- Use certificate/public-key pinning for calls to your own backend if the app handles sensitive data, to reduce MITM risk on untrusted networks.
+- Validate all inputs from Intents/deep links/IPC the same way you'd validate untrusted network input — another app on the device can send them.
+- If the app has a "swappable AI provider" or plugin architecture, make sure provider API keys are still fetched from your backend per-request (or a short-lived scoped token), not bundled per-provider inside the APK.
+- Enable code obfuscation (R8/ProGuard) for release builds as defense-in-depth — it raises the cost of reverse engineering but is not a substitute for not embedding secrets in the first place.
+
+
 
 ```
 Scope/Mode Router --> [PREVENTIVE agents]  Password & Auth Architect,
                                             Session Architect,
                                             API Boundary Architect,
-                                            Billing/Payment Architect
+                                            Billing/Payment Architect,
+                                            File Upload Architect,
+                                            Secrets & Environment Architect,
+                                            Rate Limiting & Abuse Architect,
+                                            Multi-Tenancy Isolation Architect,
+                                            Mobile/Android Security Architect
                    --> [REVIEW agents, only when existing artifacts supplied]
                        Code Analyzer, Configuration Analyzer, Dependency Analyzer,
                        Authentication Reviewer, Authorization Reviewer,
@@ -270,13 +327,21 @@ and confidence independently, produce the structured report
 ## 8. Reasoning Workflow
 
 **Preventive mode**
-1. Identify the feature being built (password/login, API contract, billing).
-2. Apply the relevant golden rules (Sections 3-6) before proposing any code.
-3. Propose the secure-by-default implementation with a concrete pattern.
-4. Call out the specific bypass(es) that pattern prevents, so the user
+1. Identify the feature being built (password/login, API contract, billing, file upload, multi-tenant data, mobile app).
+2. Run a lightweight threat-modeling pass (STRIDE-style): who could misuse this
+   feature and how (Spoofing identity, Tampering with data, Repudiation,
+   Information disclosure, Denial of service, Elevation of privilege)? Keep
+   this to a few sentences per feature — enough to surface the realistic
+   abuse case, not a full formal exercise.
+3. Apply the relevant golden rules (Sections 3-6e) before proposing any code.
+4. Propose the secure-by-default implementation with a concrete pattern.
+5. Call out the specific bypass(es) that pattern prevents, so the user
    understands *why*, not just *what*.
-5. If the user's own draft/plan conflicts with a golden rule, flag the
+6. If the user's own draft/plan conflicts with a golden rule, flag the
    conflict explicitly and offer the smallest secure fix.
+7. Before a feature ships, offer to run it against the Pre-Launch Security
+   Checklist (`templates/pre-launch-security-checklist.md`) covering auth,
+   API boundaries, billing, and infra in one pass.
 
 **Review mode** (unchanged from original design)
 1. Confirm scope/authorization if this is a formal assessment.
@@ -379,8 +444,10 @@ secure-development-assistant/
 │   ├── input.schema.json
 │   └── output.schema.json
 ├── templates/
-│   └── report-template.md
+│   ├── report-template.md
+│   └── pre-launch-security-checklist.md   (new: ship-readiness checklist)
 └── reference/
     ├── owasp-cwe-mappings.md
-    └── secure-coding-patterns.md      (new: concrete secure code patterns)
+    ├── secure-coding-patterns.md            (concrete secure code patterns)
+    └── free-tier-stack-security.md          (new: Firebase/Cloudflare/Vercel/Razorpay/Next.js specifics)
 ```
