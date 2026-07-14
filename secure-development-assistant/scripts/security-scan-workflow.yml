@@ -1,0 +1,85 @@
+# Ready-to-commit GitHub Actions workflow.
+# Copy this file to: .github/workflows/security-scan.yml in your repo.
+#
+# What it does:
+#   1. Scans the diff/repo for accidentally committed secrets (gitleaks)
+#   2. Runs a dependency vulnerability audit (npm audit — swap for pip-audit /
+#      go list -m -u / cargo audit depending on your stack)
+#   3. Fails the build on high/critical findings so a leak or known-vulnerable
+#      dependency can't merge silently.
+#
+# This is a PREVENTIVE control — it stops bugs from shipping, it does not
+# test or attack anything.
+
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret Scanning (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so gitleaks can scan past commits too
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Fails the job automatically if a secret pattern is detected.
+
+  dependency-audit:
+    name: Dependency Vulnerability Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies (fail on high/critical)
+        run: npm audit --audit-level=high
+
+      # For a Python project, replace the three steps above with:
+      #   - name: Setup Python
+      #     uses: actions/setup-python@v5
+      #     with: { python-version: '3.12' }
+      #   - name: Install pip-audit
+      #     run: pip install pip-audit
+      #   - name: Audit dependencies
+      #     run: pip-audit -r requirements.txt
+
+  config-check:
+    name: Basic Config Hygiene Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if a real .env file is committed
+        run: |
+          if git ls-files | grep -E '^\.env$|^\.env\.[a-z]+$' | grep -v '\.env\.example'; then
+            echo "::error::A .env file appears to be committed. Only .env.example should be tracked."
+            exit 1
+          else
+            echo "No committed .env file found."
+          fi
+
+      - name: Warn on debug flags left enabled (customize per framework)
+        run: |
+          if grep -rIn "DEBUG[[:space:]]*=[[:space:]]*[Tt]rue" --include="*.py" --include="*.env*" . ; then
+            echo "::warning::Found a DEBUG=True setting — confirm this isn't shipping to production."
+          fi

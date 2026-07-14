@@ -4,7 +4,7 @@ description: Use WHILE building a website/app/API/SaaS — not after the fact. G
 license: internal-use
 compatibility: opencode
 metadata:
-  version: "3.0.0"
+  version: "4.0.0"
   maintainer: Prontly
   status: production
   scope: preventive-secure-development
@@ -249,6 +249,78 @@ custom IME keyboard) rather than just web backends.
 - If the app has a "swappable AI provider" or plugin architecture, make sure provider API keys are still fetched from your backend per-request (or a short-lived scoped token), not bundled per-provider inside the APK.
 - Enable code obfuscation (R8/ProGuard) for release builds as defense-in-depth — it raises the cost of reverse engineering but is not a substitute for not embedding secrets in the first place.
 
+## 6f. AI / LLM API Integration Security
+
+Relevant whenever a feature calls an AI provider (Gemini, OpenAI, Claude, etc.),
+especially with a swappable-provider architecture.
+
+**Golden rules**
+- Provider API keys live only on the backend; the client never sees them,
+  never picks a raw key, and never calls the provider directly — always
+  through your own backend endpoint, even for a "just call Gemini" feature.
+- Never let raw, untrusted user input become a system-level instruction to
+  the model without a clear boundary between "instructions" and "user data"
+  in your prompt construction — this limits (not eliminates) prompt-injection
+  risk from user-supplied text (e.g. a voice transcript, an uploaded doc).
+- Treat model output as untrusted content: don't `eval`/execute it, don't
+  render it as raw HTML without sanitizing, and never let the model's output
+  alone decide an authorization/entitlement outcome (e.g. don't ask the model
+  "is this user allowed to do X" and act on its answer as ground truth).
+- Rate-limit and budget-cap AI calls per user/account — AI API calls cost
+  real money per request, so this is both an abuse-prevention and a
+  cost-control control. A missing limit here is a billing-drain vector, not
+  just a security one.
+- If sending user data to a third-party AI provider, be deliberate about what
+  PII/sensitive data is included in the prompt/context — strip what isn't
+  needed for the task.
+- For a swappable-provider design: keep the provider-selection and
+  key-lookup logic entirely server-side; the client can request "use
+  provider X" as a preference, but the backend decides whether that's
+  allowed and injects the actual key.
+
+## 6g. Logging, Monitoring & Incident Response
+
+**Golden rules**
+- Log security-relevant events (login success/failure, password reset,
+  entitlement changes, admin actions, payment webhook events) with enough
+  context to investigate later — but never log passwords, tokens, full card
+  numbers, or full API keys. Mask/redact before writing to any log sink.
+- Structure logs (JSON) so they're queryable later, and centralize them
+  (even a free-tier log drain) rather than relying on ephemeral container
+  stdout that disappears on redeploy.
+- Alert on anomalies you can actually act on: repeated auth failures from one
+  IP, a spike in webhook signature failures, an unusual volume of AI API
+  calls from one account.
+- Minimal incident-response playbook for a suspected leak (secret pasted
+  somewhere, key committed to a public repo, unusual access pattern):
+  1. Rotate/revoke the affected credential immediately — don't wait to
+     confirm misuse first.
+  2. Invalidate sessions/tokens that could have been issued using it.
+  3. Check logs for the exposure window for signs of actual misuse.
+  4. Fix the process gap that allowed the exposure (add to `.gitignore`,
+     add a pre-commit secret scan, etc.) so it can't recur the same way.
+  5. Notify affected users if the incident involves their data, per
+     whatever legal/contractual obligation applies to your product.
+
+## 6h. Admin Panel & Internal Tooling Security
+
+Any `/admin`, internal dashboard, or ops tool gets its own hardening pass —
+it's a high-value target precisely because it has broad access.
+
+**Golden rules**
+- Admin auth is never "the same login, just check a role flag on the
+  frontend" — enforce the role check server-side on every admin endpoint,
+  and prefer a genuinely separate, more tightly rate-limited login path.
+- Log every admin action (who did what, to which record, when) — this is
+  often the only way to reconstruct what happened after an incident.
+- Consider an IP allowlist or additional MFA step for the most destructive
+  admin actions (deleting accounts, issuing refunds, changing plan pricing).
+- Don't expose admin/internal API routes under the same public API docs
+  (OpenAPI spec) as customer-facing endpoints without a clear auth-scope
+  distinction — "improper inventory management" (OWASP API8) commonly comes
+  from an internal route that quietly stayed reachable from outside.
+
+## 7. Multi-Agent Architecture
 
 
 ```
@@ -260,7 +332,10 @@ Scope/Mode Router --> [PREVENTIVE agents]  Password & Auth Architect,
                                             Secrets & Environment Architect,
                                             Rate Limiting & Abuse Architect,
                                             Multi-Tenancy Isolation Architect,
-                                            Mobile/Android Security Architect
+                                            Mobile/Android Security Architect,
+                                            AI/LLM Integration Architect,
+                                            Logging & Incident Response Architect,
+                                            Admin/Internal Tooling Architect
                    --> [REVIEW agents, only when existing artifacts supplied]
                        Code Analyzer, Configuration Analyzer, Dependency Analyzer,
                        Authentication Reviewer, Authorization Reviewer,
@@ -445,9 +520,11 @@ secure-development-assistant/
 │   └── output.schema.json
 ├── templates/
 │   ├── report-template.md
-│   └── pre-launch-security-checklist.md   (new: ship-readiness checklist)
-└── reference/
-    ├── owasp-cwe-mappings.md
-    ├── secure-coding-patterns.md            (concrete secure code patterns)
-    └── free-tier-stack-security.md          (new: Firebase/Cloudflare/Vercel/Razorpay/Next.js specifics)
+│   └── pre-launch-security-checklist.md   (ship-readiness checklist)
+├── reference/
+│   ├── owasp-cwe-mappings.md
+│   ├── secure-coding-patterns.md            (concrete secure code patterns)
+│   └── free-tier-stack-security.md          (Firebase/Cloudflare/Vercel/Razorpay/Next.js specifics)
+└── scripts/
+    └── security-scan-workflow.yml           (new: ready-to-commit CI secret-scan + dependency-audit workflow)
 ```
