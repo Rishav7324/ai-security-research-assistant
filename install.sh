@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-SKILL_NAME="ai-security-research-assistant"
+SKILL_NAME="secure-development-assistant"
 
 # EDIT THIS after you push the skill folder to your own GitHub repo:
 REPO_URL="https://github.com/Rishav7324/ai-security-research-assistant.git"
