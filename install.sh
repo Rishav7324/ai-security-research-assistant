@@ -67,5 +67,5 @@ fi
 echo ""
 echo "✅ Installed at: ${TARGET_DIR}"
 echo "   Restart your OpenCode session — the skill will show up automatically"
-echo "   whenever a request matches its description (security review, pentest,"
-echo "   bug bounty report, OWASP audit, etc.)."
+echo "   whenever you're building auth/login/session/API/billing features, or"
+echo "   ask for a security review of existing code/config."
