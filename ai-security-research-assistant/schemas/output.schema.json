@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Security Research Assistant - Output Schema",
+  "type": "object",
+  "required": ["engagement", "executive_summary", "findings", "remediation_roadmap"],
+  "properties": {
+    "engagement": {
+      "type": "object",
+      "properties": {
+        "scope_confirmed": { "type": "boolean" },
+        "target_name": { "type": "string" },
+        "in_scope_assets": { "type": "array", "items": { "type": "string" } },
+        "excluded_assets": { "type": "array", "items": { "type": "string" } },
+        "date": { "type": "string", "format": "date" }
+      }
+    },
+    "executive_summary": { "type": "string" },
+    "findings": {
+      "type": "object",
+      "properties": {
+        "confirmed": { "type": "array", "items": { "$ref": "#/definitions/finding" } },
+        "suspected": { "type": "array", "items": { "$ref": "#/definitions/finding" } },
+        "manual_review": { "type": "array", "items": { "$ref": "#/definitions/finding" } },
+        "false_positives": { "type": "array", "items": { "$ref": "#/definitions/ruledOutItem" } }
+      }
+    },
+    "remediation_roadmap": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "priority": { "type": "integer" },
+          "finding_ids": { "type": "array", "items": { "type": "string" } },
+          "action": { "type": "string" },
+          "effort": { "type": "string", "enum": ["S", "M", "L"] },
+          "risk_reduction": { "type": "string" }
+        }
+      }
+    },
+    "coverage_notes": { "type": "string" },
+    "limitations": { "type": "string" }
+  },
+  "definitions": {
+    "finding": {
+      "type": "object",
+      "required": ["id", "title", "severity", "confidence", "evidence", "mechanism", "remediation", "status"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string", "description": "OWASP Top 10 / API Top 10 category" },
+        "cwe": { "type": "string" },
+        "severity": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "string", "enum": ["Critical", "High", "Medium", "Low", "Info"] },
+            "cvss_estimate": { "type": ["string", "null"] }
+          }
+        },
+        "confidence": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "string", "enum": ["High", "Medium", "Low"] },
+            "rationale": { "type": "string" }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string" },
+              "locator": { "type": "string" },
+              "excerpt": { "type": "string" }
+            }
+          }
+        },
+        "mechanism": { "type": "string" },
+        "business_impact": { "type": "string" },
+        "remediation": {
+          "type": "object",
+          "properties": {
+            "summary": { "type": "string" },
+            "steps": { "type": "array", "items": { "type": "string" } },
+            "references": { "type": "array", "items": { "type": "string" } },
+            "effort": { "type": "string", "enum": ["S", "M", "L"] }
+          }
+        },
+        "status": { "type": "string", "enum": ["confirmed", "suspected", "manual_review"] }
+      }
+    },
+    "ruledOutItem": {
+      "type": "object",
+      "properties": {
+        "pattern_matched": { "type": "string" },
+        "reason_ruled_out": { "type": "string" },
+        "evidence_reviewed": { "type": "string" }
+      }
+    }
+  }
+}
